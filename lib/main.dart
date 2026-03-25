@@ -44,8 +44,6 @@ class MyAppState extends ChangeNotifier {
   }
 }
 
-// ...
-
 class MyHomePage extends StatefulWidget {
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -60,13 +58,18 @@ class _MyHomePageState extends State<MyHomePage> {
     switch (selectedIndex) {
       case 0:
         page = GeneratorPage();
-        break;
       case 1:
         page = StatsPage();
-        break;
       case 2:
-        page = DailyInputWindow();
-        break;
+        page = DailyInputWindow(
+          onSubmitNavigate: () {
+            setState(() {
+              selectedIndex = 1;
+              });
+            },
+        );
+      case 3:
+        page = HelpPage();
       default:
         throw UnimplementedError('no widget for $selectedIndex');
     }
@@ -178,24 +181,40 @@ class FavoritesPage extends StatelessWidget {
   }
 }
 
-class DailyInputWindow extends StatelessWidget {
-  const DailyInputWindow({super.key});
+class DailyInputWindow extends StatefulWidget {
+  final VoidCallback onSubmitNavigate;
 
+  const DailyInputWindow({
+    super.key,
+    required this.onSubmitNavigate,
+  });
+
+
+  @override
+  State<DailyInputWindow> createState() => _DailyInputWindowState();
+
+  static InputDecoration inputDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      border: const OutlineInputBorder(),
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+    );
+  }
+}
+
+class _DailyInputWindowState extends State<DailyInputWindow> {
+  final TextEditingController caloriesEatenController = TextEditingController();
+  final TextEditingController waterController = TextEditingController();
+  final TextEditingController caloriesBurnedController = TextEditingController();
+  double? caloriesEaten;
+  double? waterDrank;
+  double? caloriesBurned;
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("FitPanion"),
-        centerTitle: true,
-        backgroundColor: Colors.purple,
-        leading: const Icon(Icons.mail),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Icon(Icons.help),
-          )
-        ],
-      ),
+      appBar: const FitPanionAppBar(),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -210,12 +229,25 @@ class DailyInputWindow extends StatelessWidget {
             const Text("Please enter your stats"),
             const SizedBox(height: 40),
 
-            // Calories Eaten
-            buildInputRow("Calories Eaten:", "3,000"),
+            Row(
+              children: [
+                const Expanded(
+                  flex: 2,
+                  child: Text("Calories Eaten:"),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: caloriesEatenController,
+                    decoration: DailyInputWindow.inputDecoration("3,000"),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
 
             const SizedBox(height: 25),
 
-            // Water Drank
             Row(
               children: [
                 const Expanded(
@@ -225,7 +257,8 @@ class DailyInputWindow extends StatelessWidget {
                 Expanded(
                   flex: 3,
                   child: TextField(
-                    decoration: inputDecoration("15.5"),
+                    controller: waterController,
+                    decoration: DailyInputWindow.inputDecoration("15.5"),
                     keyboardType: TextInputType.number,
                   ),
                 ),
@@ -236,17 +269,43 @@ class DailyInputWindow extends StatelessWidget {
 
             const SizedBox(height: 25),
 
-            // Calories Burned
-            buildInputRow("Calories Burned:", "2,400"),
+            Row(
+              children: [
+                const Expanded(
+                  flex: 2,
+                  child: Text("Calories Burned:"),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: caloriesBurnedController,
+                    decoration: DailyInputWindow.inputDecoration("2,400"),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
 
             const SizedBox(height: 50),
 
-            // Buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    setState(() {
+                      caloriesEaten = double.tryParse(caloriesEatenController.text);
+                      waterDrank = double.tryParse(waterController.text);
+                      caloriesBurned = double.tryParse(caloriesBurnedController.text);
+                    });
+
+                    print("Calories Eaten: $caloriesEaten");
+                    print("Water Drank: $waterDrank");
+                    print("Calories Burned: $caloriesBurned");
+
+
+                    widget.onSubmitNavigate();
+                  },
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 40, vertical: 15),
@@ -260,33 +319,6 @@ class DailyInputWindow extends StatelessWidget {
       ),
     );
   }
-
-  static Widget buildInputRow(String label, String hint) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: Text(label),
-        ),
-        Expanded(
-          flex: 3,
-          child: TextField(
-            decoration: inputDecoration(hint),
-            keyboardType: TextInputType.number,
-          ),
-        ),
-      ],
-    );
-  }
-
-  static InputDecoration inputDecoration(String hint) {
-    return InputDecoration(
-      hintText: hint,
-      border: const OutlineInputBorder(),
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-    );
-  }
 }
 
 
@@ -296,18 +328,7 @@ class WeeklyInputWindow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("FitPanion"),
-        centerTitle: true,
-        backgroundColor: Colors.purple,
-        leading: const Icon(Icons.mail),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Icon(Icons.help),
-          )
-        ],
-      ),
+      appBar: const FitPanionAppBar(),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
@@ -355,7 +376,13 @@ class WeeklyInputWindow extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    
+
+
+
+
+                  },
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 40, vertical: 15),
@@ -399,31 +426,119 @@ class WeeklyInputWindow extends StatelessWidget {
 }
 
 
+class FitPanionAppBar extends StatelessWidget
+    implements PreferredSizeWidget {
+  const FitPanionAppBar({Key? key}) : super(key: key);
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      title: const Text("FitPanion"),
+      centerTitle: true,
+      backgroundColor: Colors.purple,
+      leading: IconButton(
+        icon: const Icon(Icons.mail),
+        onPressed: () {
+          // this is where it would take them to the weekly input page
+        },
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.help),
+          onPressed: () {
+            
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => HelpPage(),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class HelpPage extends StatelessWidget{
+  @override
+  Widget build(BuildContext context){
+    return Scaffold(
+      appBar: const FitPanionAppBar(),
+      backgroundColor: Colors.grey[200],
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Column(
+            children: [
+              const Spacer(),
+              Expanded(
+                flex: 8,
+                child: SingleChildScrollView(
+                  child: Center(
+                    child: Text(
+                      '''
+                          This is the help page of this app. This app aims to help people eat better, drink more water and keep themselves healthier by allowing you to take care of your own FitPanion by taking care of yourself.
+
+                          Everyday you should input the amount of calories your have eaten, amount of calories you have burned and water you have drank with the "Input" window located at the bottom of the app. Every week a notification will come in at the top left hand side of the app asking for your weight, so we can track how well you are doing. To view your past inputs, visit the history page and to view your own FitPanion, visit the FitPanion page.
+
+                          Your FitPanion needs the same calories water and exercise as you so be sure to take care of it and yourself. To view this page again, tap the "?" in the top right.
+                          ''',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey[800],
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              SizedBox(
+                width: 200,
+                height: 50,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black87,
+                    side: const BorderSide(color: Colors.black26),
+                    elevation: 0,
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: const Text(
+                    'Got it',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class StatsPage extends StatelessWidget {
   const StatsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("FitPanion"),
-        centerTitle: true,
-        backgroundColor: Colors.purple,
-        leading: const Icon(Icons.mail),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Icon(Icons.help),
-          )
-        ],
-      ),
+      appBar: const FitPanionAppBar(),
       backgroundColor: Colors.grey[300],
       body: SafeArea(
         child: Column(
           children: [
             const SizedBox(height: 20),
 
-            // Top Stats Row
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
@@ -460,7 +575,7 @@ class StatsPage extends StatelessWidget {
   }
 
   Widget buildFitPanionImageBox(String path) {
-  return Container(
+  return SizedBox(
     width: 150,
     height: 150,
     child: ClipRRect(
@@ -474,7 +589,7 @@ class StatsPage extends StatelessWidget {
   } 
 
   Widget buildBackgroundImageBox(String path) {
-  return Container(
+  return SizedBox(
     width: 1000,
     height: 300,
     child: ClipRRect(

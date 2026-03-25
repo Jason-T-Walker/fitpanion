@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "463757382457",
+    "project_id": "fitpanion-3d8dd",
+    "storage_bucket": "fitpanion-3d8dd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:463757382457:android:604c7acb5fbe5635338ee8",
+        "android_client_info": {
+          "package_name": "jason.fitpanion"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDk6_Mdb1vwfrKaTNY7JCN5Lisezh7x084"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
