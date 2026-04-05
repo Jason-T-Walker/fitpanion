@@ -26,6 +26,7 @@ class MyApp extends StatelessWidget {
       create: (context) => MyAppState(),
       child: MaterialApp(
         title: 'Fitpanion',
+        debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.purple),
         ),
@@ -653,12 +654,10 @@ class _FitPanionAppBarState extends State<FitPanionAppBar> {
     final List weeklyInputs = data['weeklyInputs'] ?? [];
 
     if (weeklyInputs.isEmpty) {
-      // No entries at all, show notification
       setState(() { showNotification = true; });
       return;
     }
 
-    // Get date from last entry e.g. "2026-04-03,weight:82.0"
     final lastEntry = weeklyInputs.last as String;
     final datePart = lastEntry.split(',').first;
     final parts = datePart.split('-');
@@ -1121,7 +1120,6 @@ class _HistoryPageState extends State<HistoryPage> {
         ? const Center(child: CircularProgressIndicator())
         : Column(
             children: [
-              // Toggle button
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
@@ -1174,7 +1172,6 @@ class _HistoryPageState extends State<HistoryPage> {
                 ),
               ),
 
-              // List
               Expanded(
                 child: showingDaily
                     ? parsedEntries.isEmpty
