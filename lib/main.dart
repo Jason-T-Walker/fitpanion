@@ -1,8 +1,19 @@
 import 'package:english_words/english_words.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'screens/login_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   runApp(MyApp());
 }
 
@@ -16,9 +27,9 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Fitpanion',
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.purple),
         ),
-        home: MyHomePage(),
+        home: const LoginScreen(),
       ),
     );
   }
@@ -42,7 +53,23 @@ class MyAppState extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  var dailyInputs = <String>[];
+
+  void addDailyInput(String entry) {
+    dailyInputs.add(entry);
+    notifyListeners();
+  }
+
+  var weeklyInputs = <String>[];
+
+  void addWeeklyInput(String entry) {
+    weeklyInputs.add(entry);
+    notifyListeners();
+  }
 }
+
+
 
 class MyHomePage extends StatefulWidget {
   @override
@@ -50,14 +77,14 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  var selectedIndex = 0;
+  var selectedIndex = 1;
 
   @override
   Widget build(BuildContext context) {
     Widget page;
     switch (selectedIndex) {
       case 0:
-        page = GeneratorPage();
+        page = HistoryPage();
       case 1:
         page = StatsPage();
       case 2:
@@ -210,8 +237,67 @@ class _DailyInputWindowState extends State<DailyInputWindow> {
   double? caloriesEaten;
   double? waterDrank;
   double? caloriesBurned;
+  double? recommendedCalories;
  
+  double calculateDailyCalories({
+    required double weightKg,
+    required double heightCm,
+    required int age,
+    required double caloriesBurned,
+  }) {
+    final bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * age) + 5;
+    return bmr + caloriesBurned;
+  }
+
   @override
+  void initState() {
+    super.initState();
+    loadUserData();
+  }
+
+  Future<void> loadUserData() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+
+    if (doc.exists) {
+      final data = doc.data()!;
+      final height = (data['height'] as num).toDouble();
+      final age = data['age'] as int;
+
+      final List dailyinputs = data['dailyInputs'] ?? [];
+      final List weeklyinputs = data['weeklyInputs'] ?? [];
+      double lastExercise = 0;
+      double lastWeight = 0;
+      if (dailyinputs.isNotEmpty) {
+        final parts = (dailyinputs.last as String).split(',');
+        for (final part in parts) {
+          if (part.startsWith('exercise:')) {
+            lastExercise = double.tryParse(
+              part.replaceFirst('exercise:', '')) ?? 0;
+          }
+        }
+      }
+      if (weeklyinputs.isNotEmpty) {
+        final parts = (weeklyinputs.last as String).split(',');
+        for (final part in parts) {
+          if (part.startsWith('weight:')) {
+            lastWeight = double.tryParse(
+              part.replaceFirst('weight:', '')) ?? 0;
+          }
+        }
+      }
+
+      setState(() {
+        recommendedCalories = (10 * lastWeight) + (6.25 * height) - (5 * age) + 5 + lastExercise;
+      });
+    }
+  }
+
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const FitPanionAppBar(),
@@ -227,6 +313,17 @@ class _DailyInputWindowState extends State<DailyInputWindow> {
             ),
             const SizedBox(height: 8),
             const Text("Please enter your stats"),
+            const SizedBox(height: 8),
+            recommendedCalories != null
+                ? Text(
+                    "Recommended calories today: ${recommendedCalories!.toStringAsFixed(0)}",
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  )
+                : const SizedBox.shrink(),
             const SizedBox(height: 40),
 
             Row(
@@ -243,6 +340,8 @@ class _DailyInputWindowState extends State<DailyInputWindow> {
                     keyboardType: TextInputType.number,
                   ),
                 ),
+                const SizedBox(width: 10),
+                const Text("kcals"),
               ],
             ),
 
@@ -283,6 +382,8 @@ class _DailyInputWindowState extends State<DailyInputWindow> {
                     keyboardType: TextInputType.number,
                   ),
                 ),
+                const SizedBox(width: 10),
+                const Text("kcals"),
               ],
             ),
 
@@ -292,18 +393,27 @@ class _DailyInputWindowState extends State<DailyInputWindow> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     setState(() {
                       caloriesEaten = double.tryParse(caloriesEatenController.text);
                       waterDrank = double.tryParse(waterController.text);
                       caloriesBurned = double.tryParse(caloriesBurnedController.text);
                     });
 
-                    print("Calories Eaten: $caloriesEaten");
-                    print("Water Drank: $waterDrank");
-                    print("Calories Burned: $caloriesBurned");
+                    final appState = context.read<MyAppState>();
+                    final today = DateTime.now();
+                    final entry = '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')},'
+                        'cal:${caloriesEaten ?? 0},'
+                        'water:${waterDrank ?? 0},'
+                        'exercise:${caloriesBurned ?? 0}';
+                    appState.addDailyInput(entry);
 
-
+                    final uid = FirebaseAuth.instance.currentUser?.uid;
+                    if (uid != null) {
+                      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+                        'dailyInputs': FieldValue.arrayUnion([entry]),
+                      });
+                    }
                     widget.onSubmitNavigate();
                   },
                   style: ElevatedButton.styleFrom(
@@ -322,8 +432,87 @@ class _DailyInputWindowState extends State<DailyInputWindow> {
 }
 
 
-class WeeklyInputWindow extends StatelessWidget {
+class WeeklyInputWindow extends StatefulWidget {
   const WeeklyInputWindow({super.key});
+
+  @override
+  State<WeeklyInputWindow> createState() => _WeeklyInputWindowState();
+}
+
+class _WeeklyInputWindowState extends State<WeeklyInputWindow> {
+  final weightController = TextEditingController();
+  double? lastWeight;
+  double? currentWeight;
+  bool isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    loadLastWeight();
+  }
+
+  Future<void> loadLastWeight() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+
+    if (!doc.exists) return;
+
+    final data = doc.data()!;
+    final List inputs = data['weeklyInputs'] ?? [];
+
+    if (inputs.isNotEmpty) {
+      final parts = (inputs.last as String).split(',');
+      for (final part in parts) {
+        if (part.startsWith('weight:')) {
+          setState(() {
+            lastWeight = double.tryParse(part.replaceFirst('weight:', ''));
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> submitWeight() async {
+  currentWeight = double.tryParse(weightController.text);
+  if (currentWeight == null) return;
+
+  setState(() { isLoading = true; });
+
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid != null) {
+    try {
+      final today = DateTime.now();
+      final entry =
+          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')},'
+          'weight:$currentWeight';
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .update({
+        'weeklyInputs': FieldValue.arrayUnion([entry]),
+      });
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MyHomePage(),
+        ),
+      );
+    } catch (e) {
+      print("Error saving: $e");
+    }
+  }
+}
+
+  double? get weightDifference {
+    if (lastWeight == null || currentWeight == null) return null;
+    return currentWeight! - lastWeight!;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -352,23 +541,32 @@ class WeeklyInputWindow extends StatelessWidget {
                 Expanded(
                   flex: 3,
                   child: TextField(
-                    decoration: inputDecoration("180"),
+                    controller: weightController,
+                    decoration: inputDecoration("82"),
                     keyboardType: TextInputType.number,
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Text("lbs"),
+                const Text("kg"),
               ],
             ),
 
-            buildInputRow("Last Week's Weight", "182 lbs"),
-
-            const SizedBox(height: 25),
-            
-
             const SizedBox(height: 25),
 
-            Text("Difference: 2 lbs"),
+            Text(
+              "Last Week's Weight: ${lastWeight != null ? '${lastWeight!.toStringAsFixed(1)} kg' : 'No data yet'}",
+            ),
+
+            const SizedBox(height: 25),
+
+            if (weightDifference != null)
+              Text(
+                "Difference: ${weightDifference! >= 0 ? '+' : ''}${weightDifference!.toStringAsFixed(1)} kg",
+                style: TextStyle(
+                  color: weightDifference! <= 0 ? Colors.green : Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
 
             const SizedBox(height: 50),
 
@@ -376,42 +574,36 @@ class WeeklyInputWindow extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton(
-                  onPressed: () {
-                    
-
-
-
-
+                  onPressed: isLoading ? null : submitWeight,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 40, vertical: 15),
+                  ),
+                  child: isLoading
+                      ? const CircularProgressIndicator()
+                      : const Text("Submit"),
+                ),
+                ElevatedButton(
+                  onPressed: (){
+                    Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MyHomePage(),
+                    ),
+                  );
                   },
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 40, vertical: 15),
                   ),
-                  child: const Text("Submit"),
+                  child:
+                      const Text("Cancel"),
                 ),
               ],
             )
           ],
         ),
       ),
-    );
-  }
-
-  static Widget buildInputRow(String label, String hint) {
-    return Row(
-      children: [
-        Expanded(
-          flex: 2,
-          child: Text(label),
-        ),
-        Expanded(
-          flex: 3,
-          child: TextField(
-            decoration: inputDecoration(hint),
-            keyboardType: TextInputType.number,
-          ),
-        ),
-      ],
     );
   }
 
@@ -426,12 +618,61 @@ class WeeklyInputWindow extends StatelessWidget {
 }
 
 
-class FitPanionAppBar extends StatelessWidget
-    implements PreferredSizeWidget {
-  const FitPanionAppBar({Key? key}) : super(key: key);
+
+class FitPanionAppBar extends StatefulWidget implements PreferredSizeWidget {
+  const FitPanionAppBar({super.key});
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  State<FitPanionAppBar> createState() => _FitPanionAppBarState();
+}
+
+class _FitPanionAppBarState extends State<FitPanionAppBar> {
+  bool showNotification = false;
+
+  @override
+  void initState() {
+    super.initState();
+    checkWeeklyInput();
+  }
+
+  Future<void> checkWeeklyInput() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+
+    if (!doc.exists) return;
+
+    final data = doc.data()!;
+    final List weeklyInputs = data['weeklyInputs'] ?? [];
+
+    if (weeklyInputs.isEmpty) {
+      // No entries at all, show notification
+      setState(() { showNotification = true; });
+      return;
+    }
+
+    // Get date from last entry e.g. "2026-04-03,weight:82.0"
+    final lastEntry = weeklyInputs.last as String;
+    final datePart = lastEntry.split(',').first;
+    final parts = datePart.split('-');
+
+    if (parts.length == 3) {
+      final lastDate = DateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+        int.parse(parts[2]),
+      );
+      final daysSince = DateTime.now().difference(lastDate).inDays;
+      setState(() { showNotification = daysSince >= 7; });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -439,17 +680,38 @@ class FitPanionAppBar extends StatelessWidget
       title: const Text("FitPanion"),
       centerTitle: true,
       backgroundColor: Colors.purple,
-      leading: IconButton(
-        icon: const Icon(Icons.mail),
-        onPressed: () {
-          // this is where it would take them to the weekly input page
-        },
+      leading: Stack(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.mail),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const WeeklyInputWindow(),
+                ),
+              );
+            },
+          ),
+          if (showNotification)
+            Positioned(
+              right: 8,
+              top: 8,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
       ),
       actions: [
         IconButton(
           icon: const Icon(Icons.help),
           onPressed: () {
-            
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -526,8 +788,124 @@ class HelpPage extends StatelessWidget{
   }
 }
 
-class StatsPage extends StatelessWidget {
+class StatsPage extends StatefulWidget {
   const StatsPage({super.key});
+
+  @override
+  State<StatsPage> createState() => _StatsPageState();
+}
+
+class _StatsPageState extends State<StatsPage> {
+  double calorieRatio = 0.0;
+  double waterRatio = 0.0;
+  double exerciseRatio = 0.0;
+  double happyRatio = 0.0;
+  String fitpanionImage = "assets/FitPanion.png";
+
+  @override
+  void initState() {
+    super.initState();
+    loadStats();
+  }
+
+  Future<void> loadStats() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+
+    if (!doc.exists) return;
+
+    final data = doc.data()!;
+    final height = (data['height'] as num).toDouble();
+    final age = data['age'] as int;
+    final sex = data['sex'] as String;
+
+    final List inputs = data['dailyInputs'] ?? [];
+    final List weeklyinputs = data['weeklyInputs'] ?? [];
+    double lastCaloriesEaten = 0;
+    double lastExercise = 0;
+    double lastWeight = 70;
+    double lastWater = 0;
+    double sexwaterAdjustment = 0;
+    int sexexerciseAdjustment = 50;
+    double ageAdjustment = 0;
+
+    if (inputs.isNotEmpty) {
+      final parts = (inputs.last as String).split(',');
+      for (final part in parts) {
+        if (part.startsWith('cal:')) {
+          lastCaloriesEaten = double.tryParse(
+              part.replaceFirst('cal:', '')) ?? 0;
+        } else if (part.startsWith('exercise:')) {
+          lastExercise = double.tryParse(
+              part.replaceFirst('exercise:', '')) ?? 0;
+        } else if (part.startsWith('water:')) {
+          lastWater = double.tryParse(
+              part.replaceFirst('water:', '')) ?? 0;
+        }
+      }
+    }
+    if (weeklyinputs.isNotEmpty) {
+      final parts = (weeklyinputs.last as String).split(',');
+      for (final part in parts) {
+        if (part.startsWith('weight:')) {
+          lastWeight = double.tryParse(
+              part.replaceFirst('weight:', '')) ?? 0;
+        }
+      }
+    }
+
+    if (sex == 'male'){
+      sexwaterAdjustment = 0.3;
+      sexexerciseAdjustment = 50;
+    }
+    if (age > 40){
+      ageAdjustment = (age - 40) *2.5;
+    }
+
+    final recommendedintake = (10 * lastWeight) + (6.25 * height) - (5 * age) + 5 + lastExercise;
+    final recommendedwater = (((lastWeight * .033) + ((height - 170)*.01)) + sexwaterAdjustment) * 4.227;
+    final recommendedexercise = ((lastWeight*3.5) + ((height -170) * 1.5) + sexexerciseAdjustment - ageAdjustment);
+
+
+    setState(() {
+      calorieRatio = lastCaloriesEaten / recommendedintake;
+      if (calorieRatio >= 2 || calorieRatio < 0){
+        calorieRatio = 0.0;
+      }
+      else if (calorieRatio >= 1){
+        calorieRatio = 2 - calorieRatio;
+      }
+      waterRatio = lastWater / recommendedwater;
+      if (waterRatio >= 2 || waterRatio < 0){
+        waterRatio = 0.0;
+      }
+      else if (waterRatio >= 1){
+        waterRatio = 2 - waterRatio;
+      }
+      exerciseRatio = lastExercise / recommendedexercise;
+      if (exerciseRatio >= 2 || exerciseRatio < 0){
+        exerciseRatio = 0.0;
+      }
+      else if (exerciseRatio >= 1){
+        exerciseRatio = 2 - exerciseRatio;
+      }
+      happyRatio = (waterRatio + calorieRatio + exerciseRatio)/3;
+      if(lastCaloriesEaten > recommendedintake + 100){
+        fitpanionImage = "assets/FitPanionFat.png";
+      }
+      else if (lastCaloriesEaten < recommendedintake - 100){
+        fitpanionImage = "assets/FitPanionSkinny.png";
+      }
+      else{
+        fitpanionImage = "assets/FitPanionFit.png";
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -543,13 +921,13 @@ class StatsPage extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 children: [
-                  buildStatBar("Calories", 0.8),
+                  buildStatBar("Calories", calorieRatio),
                   const SizedBox(height: 10),
-                  buildStatBar("Water", 0.7),
+                  buildStatBar("Water", waterRatio),
                   const SizedBox(height: 10),
-                  buildStatBar("Exercise", 0.85),
+                  buildStatBar("Exercise", exerciseRatio),
                   const SizedBox(height: 10),
-                  buildStatBar("Happiness", 0.65),
+                  buildStatBar("Happiness", happyRatio),
                 ],
               ),
             ),
@@ -561,7 +939,7 @@ class StatsPage extends StatelessWidget {
                   alignment: Alignment.center,
                   children: [
                     buildBackgroundImageBox('assets/FitPanionBG.png'),
-                    buildFitPanionImageBox('assets/FitPanion.png'),
+                    buildFitPanionImageBox(fitpanionImage),
                   ],
                 ),
               ),
@@ -575,32 +953,32 @@ class StatsPage extends StatelessWidget {
   }
 
   Widget buildFitPanionImageBox(String path) {
-  return SizedBox(
-    width: 150,
-    height: 150,
-    child: ClipRRect(
-      child: Image.asset(
-        path,
-        fit: BoxFit.cover,
-        filterQuality: FilterQuality.none,
+    return SizedBox(
+      width: 150,
+      height: 150,
+      child: ClipRRect(
+        child: Image.asset(
+          path,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.none,
+        ),
       ),
-    ),
-  );
-  } 
+    );
+  }
 
   Widget buildBackgroundImageBox(String path) {
-  return SizedBox(
-    width: 1000,
-    height: 300,
-    child: ClipRRect(
-      child: Image.asset(
-        path,
-        fit: BoxFit.cover,
-        filterQuality: FilterQuality.none,
+    return SizedBox(
+      width: 1000,
+      height: 300,
+      child: ClipRRect(
+        child: Image.asset(
+          path,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.none,
+        ),
       ),
-    ),
-  );
-  } 
+    );
+  }
 
   Widget buildStatBar(String label, double value) {
     return Row(
@@ -644,6 +1022,248 @@ class BigCard extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Text(pair.asLowerCase, style: style, semanticsLabel: pair.asPascalCase,),
       ),
+    );
+  }
+}
+
+class HistoryPage extends StatefulWidget {
+  const HistoryPage({super.key});
+
+  @override
+  State<HistoryPage> createState() => _HistoryPageState();
+}
+
+class _HistoryPageState extends State<HistoryPage> {
+  List<Map<String, String>> parsedEntries = [];
+  List<Map<String, String>> parsedWeeklyEntries = [];
+  bool isLoading = true;
+  bool showingDaily = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadHistory();
+  }
+
+  Future<void> loadHistory() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+
+    if (!doc.exists) return;
+
+    final data = doc.data()!;
+
+    final List dailyInputs = data['dailyInputs'] ?? [];
+    final List<Map<String, String>> entries = [];
+    for (final input in dailyInputs.reversed) {
+      final parts = (input as String).split(',');
+      String date = '';
+      String calories = '';
+      String water = '';
+      String exercise = '';
+      for (final part in parts) {
+        if (part.contains('-') && !part.startsWith('cal') &&
+            !part.startsWith('water') && !part.startsWith('exercise')) {
+          date = part;
+        } else if (part.startsWith('cal:')) {
+          calories = part.replaceFirst('cal:', '');
+        } else if (part.startsWith('water:')) {
+          water = part.replaceFirst('water:', '');
+        } else if (part.startsWith('exercise:')) {
+          exercise = part.replaceFirst('exercise:', '');
+        }
+      }
+      entries.add({
+        'date': date,
+        'calories': calories,
+        'water': water,
+        'exercise': exercise,
+      });
+    }
+
+    final List weeklyInputs = data['weeklyInputs'] ?? [];
+    final List<Map<String, String>> weeklyEntries = [];
+    for (final input in weeklyInputs.reversed) {
+      final parts = (input as String).split(',');
+      String date = '';
+      String weight = '';
+      for (final part in parts) {
+        if (part.contains('-') && !part.startsWith('weight')) {
+          date = part;
+        } else if (part.startsWith('weight:')) {
+          weight = part.replaceFirst('weight:', '');
+        }
+      }
+      weeklyEntries.add({
+        'date': date,
+        'weight': weight,
+      });
+    }
+
+    setState(() {
+      parsedEntries = entries;
+      parsedWeeklyEntries = weeklyEntries;
+      isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const FitPanionAppBar(),
+      backgroundColor: Colors.grey[200],
+      body: isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : Column(
+            children: [
+              // Toggle button
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() { showingDaily = true; }),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: showingDaily ? Colors.purple : Colors.grey[300],
+                            borderRadius: const BorderRadius.horizontal(
+                                left: Radius.circular(8)),
+                          ),
+                          child: Center(
+                            child: Text(
+                              "Daily",
+                              style: TextStyle(
+                                color: showingDaily ? Colors.white : Colors.black,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() { showingDaily = false; }),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: showingDaily ? Colors.grey[300] : Colors.purple,
+                            borderRadius: const BorderRadius.horizontal(
+                                right: Radius.circular(8)),
+                          ),
+                          child: Center(
+                            child: Text(
+                              "Weekly",
+                              style: TextStyle(
+                                color: showingDaily ? Colors.black : Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // List
+              Expanded(
+                child: showingDaily
+                    ? parsedEntries.isEmpty
+                        ? const Center(child: Text("No daily entries yet."))
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: parsedEntries.length,
+                            itemBuilder: (context, index) {
+                              final entry = parsedEntries[index];
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        entry['date'] ?? '',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.purple,
+                                        ),
+                                      ),
+                                      const Divider(),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          _statItem(Icons.local_fire_department,
+                                              "Calories", "${entry['calories']} kcal", Colors.orange),
+                                          _statItem(Icons.water_drop,
+                                              "Water", "${entry['water']} cups", Colors.blue),
+                                          _statItem(Icons.fitness_center,
+                                              "Exercise", "${entry['exercise']} kcal", Colors.green),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          )
+                    : parsedWeeklyEntries.isEmpty
+                        ? const Center(child: Text("No weekly entries yet."))
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: parsedWeeklyEntries.length,
+                            itemBuilder: (context, index) {
+                              final entry = parsedWeeklyEntries[index];
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        entry['date'] ?? '',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.purple,
+                                        ),
+                                      ),
+                                      const Divider(),
+                                      _statItem(Icons.monitor_weight,
+                                          "Weight", "${entry['weight']} kg", Colors.purple),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Widget _statItem(IconData icon, String label, String value, Color color) {
+    return Column(
+      children: [
+        Icon(icon, color: color),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+      ],
     );
   }
 }
